@@ -106,13 +106,8 @@ impl Dict {
         }
         i
     }
-    pub fn new_from_file(filename: &str,
-                         min_count: u32,
-                         threshold: f32,
-                         verbose: bool)
-                         -> Result<Dict, W2vError> {
-        let mut dict = Dict::new();
-        let input_file = try!(File::open(filename));
+
+    fn words_from_text_file(input_file: File) -> (HashMap<String, Entry>, usize) {
         let mut reader = BufReader::with_capacity(10000, input_file);
         let mut buf_str = String::with_capacity(5000);
         let mut words: HashMap<String, Entry> = HashMap::with_capacity(2<<20);
@@ -128,7 +123,18 @@ impl Dict {
             }
             buf_str.clear();
         }
-        size = 0;
+        (words, ntokens)
+    }
+
+    pub fn new_from_file(filename: &str,
+                         min_count: u32,
+                         threshold: f32,
+                         verbose: bool)
+                         -> Result<Dict, W2vError> {
+        let mut dict = Dict::new();
+        let input_file = try!(File::open(filename));
+        let (words, ntokens) = Self::words_from_text_file(input_file);
+        let mut size = 0;
         let word2ent: HashMap<String, Entry> = words.into_iter()
             .filter(|&(_, ref v)| v.count >= min_count)
             .map(|(k, mut v)| {
