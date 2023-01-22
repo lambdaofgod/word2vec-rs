@@ -1,8 +1,8 @@
 use clap;
-use std::num;
-use std::fmt;
 use std::error;
+use std::fmt;
 use std::io;
+use std::num;
 #[derive(Debug)]
 pub enum W2vError {
     File(io::Error),
@@ -14,7 +14,6 @@ impl From<io::Error> for W2vError {
     }
 }
 
-
 impl fmt::Display for W2vError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
@@ -24,7 +23,7 @@ impl fmt::Display for W2vError {
     }
 }
 
-impl error::Error for W2vError{
+impl error::Error for W2vError {
     fn description(&self) -> &str {
         match *self {
             W2vError::File(ref err) => err.description(),
@@ -80,23 +79,21 @@ impl error::Error for ArgumentError {
             ArgumentError::ParseInt(ref err) => err.description(),
         }
     }
-    fn cause(&self) -> Option<&error::Error> {
+    fn cause(&self) -> Option<&dyn error::Error> {
         match *self {
             ArgumentError::ParseArg(ref err) => Some(err),
             ArgumentError::ParseFloat(ref err) => Some(err),
             ArgumentError::ParseInt(ref err) => Some(err),
-
         }
     }
 }
-#[derive(Clone,Copy,Debug,PartialEq,Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Command {
     Train,
     Test,
 }
 
-
-#[derive(Debug,Clone)]
+#[derive(Debug, Clone)]
 pub struct Argument {
     pub input: String,
     pub output: String,
@@ -111,6 +108,7 @@ pub struct Argument {
     pub lr_update: u32,
     pub command: Command,
     pub verbose: bool,
+    pub max_rows: Option<usize>,
 }
 
 struct ArgumentBuilder {
@@ -127,6 +125,7 @@ struct ArgumentBuilder {
     pub lr_update: u32,
     pub command: Command,
     pub verbose: bool,
+    pub max_rows: Option<usize>,
 }
 impl ArgumentBuilder {
     pub fn new(input: String, command: Command) -> ArgumentBuilder {
@@ -144,6 +143,7 @@ impl ArgumentBuilder {
             lr_update: 100,
             command: command,
             verbose: false,
+            max_rows: None,
         }
     }
     #[allow(dead_code)]
@@ -202,6 +202,11 @@ impl ArgumentBuilder {
         self
     }
     #[allow(dead_code)]
+    pub fn max_rows(&mut self, max_rows: Option<usize>) -> &mut Self {
+        self.max_rows = max_rows;
+        self
+    }
+    #[allow(dead_code)]
     pub fn finalize(&self) -> Argument {
         Argument {
             input: self.input.to_owned(),
@@ -217,6 +222,7 @@ impl ArgumentBuilder {
             lr_update: self.lr_update,
             command: self.command,
             verbose: self.verbose,
+            max_rows: self.max_rows,
         }
     }
 }
@@ -248,27 +254,49 @@ pub fn parse_arguments<'a>(args: &'a Vec<String>) -> Result<Argument, ArgumentEr
         (@arg nthreads: --thread +takes_value "number of threads(12)")
         (@arg threshold: --threshold +takes_value "sampling threshold(1e-4)")
         (@arg verbose: --verbose "print internal log")
-        )
+        (@arg max_rows: --max_rows +takes_value "maximal rows from the training corpus")
+       )
     );
     let matches = app.get_matches_from(args);
 
     if let Some(train_info) = matches.subcommand_matches("train") {
-        let input = try!(train_info.value_of("input")
-            .ok_or(clap::Error::argument_not_found_auto("input")));
-        let output = try!(train_info.value_of("output")
-            .ok_or(clap::Error::argument_not_found_auto("output")));
-        let win = try!(train_info.value_of("win").unwrap_or("5").parse::<usize>());
-        let neg = try!(train_info.value_of("neg").unwrap_or("5").parse::<usize>());
-        let lr = try!(train_info.value_of("lr").unwrap_or("0.05").parse::<f32>());
-        let lr_update = try!(train_info.value_of("lr_update").unwrap_or("5000").parse::<u32>());
-        let vector_size = try!(train_info.value_of("dim").unwrap_or("100").parse::<usize>());
-        let epoch = try!(train_info.value_of("epoch").unwrap_or("5").parse::<u32>());
-        let min_count = try!(train_info.value_of("min_count").unwrap_or("5").parse::<u32>());
-        let nthreads = try!(train_info.value_of("nthreads").unwrap_or("12").parse::<u32>());
-        let threshold = try!(train_info.value_of("threshold").unwrap_or("1e-4").parse::<f32>());
+        let input = train_info
+            .value_of("input")
+            .ok_or(clap::Error::argument_not_found_auto("input"));
+        let output = train_info
+            .value_of("output")
+            .ok_or(clap::Error::argument_not_found_auto("output"));
+        let win = train_info.value_of("win").unwrap_or("5").parse::<usize>()?;
+        let neg = train_info.value_of("neg").unwrap_or("5").parse::<usize>()?;
+        let lr = train_info.value_of("lr").unwrap_or("0.05").parse::<f32>()?;
+        let lr_update = train_info
+            .value_of("lr_update")
+            .unwrap_or("5000")
+            .parse::<u32>()?;
+        let vector_size = train_info
+            .value_of("dim")
+            .unwrap_or("100")
+            .parse::<usize>()?;
+        let epoch = train_info.value_of("epoch").unwrap_or("5").parse::<u32>()?;
+        let min_count = train_info
+            .value_of("min_count")
+            .unwrap_or("5")
+            .parse::<u32>()?;
+        let nthreads = train_info
+            .value_of("nthreads")
+            .unwrap_or("12")
+            .parse::<u32>()?;
+        let threshold = train_info
+            .value_of("threshold")
+            .unwrap_or("1e-4")
+            .parse::<f32>()?;
+        let max_rows = match train_info.value_of("max_rows") {
+            Some(s) => Some(str::parse::<usize>(s)?),
+            None => None,
+        };
         Ok(Argument {
-            input: input.to_string(),
-            output: output.to_string(),
+            input: input?.to_string(),
+            output: output?.to_string(),
             lr: lr,
             dim: vector_size,
             win: win,
@@ -280,15 +308,18 @@ pub fn parse_arguments<'a>(args: &'a Vec<String>) -> Result<Argument, ArgumentEr
             lr_update: lr_update,
             command: Command::Train,
             verbose: train_info.is_present("verbose"),
+            max_rows: max_rows,
         })
     } else if let Some(ref test_info) = matches.subcommand_matches("test") {
-        let input = try!(test_info.value_of("input")
-            .ok_or(clap::Error::argument_not_found_auto("input")));
-        Ok(ArgumentBuilder::new(input.to_string(), Command::Test)
+        let input = test_info
+            .value_of("input")
+            .ok_or(clap::Error::argument_not_found_auto("input"));
+        Ok(ArgumentBuilder::new(input?.to_string(), Command::Test)
             .verbose(test_info.is_present("verbose"))
             .finalize())
     } else {
-        Err(ArgumentError::ParseArg(clap::Error::argument_not_found_auto("missing arguments")))
+        Err(ArgumentError::ParseArg(
+            clap::Error::argument_not_found_auto("missing arguments"),
+        ))
     }
-
 }

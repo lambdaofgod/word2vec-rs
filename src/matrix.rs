@@ -4,8 +4,8 @@ use blas_sys::c;
 use rand::distributions::{IndependentSample, Range};
 use std::cell::UnsafeCell;
 
-use simd_dot_product;
-use saxpy;
+use crate::simd_dot_product;
+use crate::saxpy;
 
 #[derive(Debug)]
 pub struct MatrixWrapper {

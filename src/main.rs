@@ -16,5 +16,4 @@ fn main() {
         w2v.save_vectors(&arguments.output).expect("error save vectors");
 
     }
-
 }

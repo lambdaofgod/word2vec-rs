@@ -1,7 +1,7 @@
 use std::ffi::{CStr,CString};
 use std::os::raw::c_char;
-use parse_arguments;
-use train;
+use crate::parse_arguments;
+use crate::train;
 use std::error::Error;
 // 0 : ok with ptr filled with argument 
 // -1: utf8 unicode parse error

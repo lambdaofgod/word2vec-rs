@@ -1,16 +1,15 @@
-use std::thread;
-use std::sync::Arc;
-use {Dict, Matrix, Argument, Model};
-use std::io::{BufReader, SeekFrom, Seek, BufRead, Read,stdout,Write};
-use std::fs::{File, metadata};
-use std::sync::atomic::{AtomicUsize, ATOMIC_USIZE_INIT, Ordering};
+use crate::W2vError;
+use crate::Word2vec;
+use crate::{Argument, Dict, Matrix, Model};
 use rand::distributions::{IndependentSample, Range};
 use rand::StdRng;
+use std::fs::{metadata, File};
+use std::io::{stdout, BufRead, BufReader, Read, Seek, SeekFrom, Write};
+use std::sync::atomic::{AtomicUsize, Ordering, ATOMIC_USIZE_INIT};
+use std::sync::Arc;
+use std::thread;
 use time::Instant;
-use Word2vec;
-use W2vError;
 static ALL_WORDS: AtomicUsize = ATOMIC_USIZE_INIT;
-
 
 fn skipgram(model: &mut Model, line: &Vec<usize>, rng: &mut StdRng, unifrom: &Range<isize>) {
     let length = line.len() as i32;
@@ -24,24 +23,25 @@ fn skipgram(model: &mut Model, line: &Vec<usize>, rng: &mut StdRng, unifrom: &Ra
     }
 }
 fn print_progress(model: &Model, progress: f32, words: f32, start_time: &Instant) {
-    print!("\rProgress:{:.1}% words/sec:{:<7.0} lr:{:.4} loss:{:.5}",
-           progress * 100.,
-           ((words * 1000.) /
-            (start_time.elapsed().whole_milliseconds()) as f32)as u64,
-           model.get_lr(),
-           model.get_loss());
+    print!(
+        "\rProgress:{:.1}% words/sec:{:<7.0} lr:{:.4} loss:{:.5}",
+        progress * 100.,
+        ((words * 1.) / (start_time.elapsed().whole_seconds()) as f32) as u64,
+        model.get_lr(),
+        model.get_loss()
+    );
     stdout().flush().unwrap();
 }
-fn train_thread(dict: &Dict,
-                mut input: &mut Matrix,
-                mut output: &mut Matrix,
-                arg: Argument,
-                tid: u32,
-                neg_table: Arc<Vec<usize>>,
-                start_pos: u64,
-                end_pos: u64)
-                -> Result<bool, W2vError> {
-
+fn train_thread(
+    dict: &Dict,
+    mut input: &mut Matrix,
+    mut output: &mut Matrix,
+    arg: Argument,
+    tid: u32,
+    neg_table: Arc<Vec<usize>>,
+    start_pos: u64,
+    end_pos: u64,
+) -> Result<bool, W2vError> {
     let between = Range::new(1, (arg.win + 1) as isize);
     let mut rng = StdRng::new().unwrap();
     let mut model = Model::new(&mut input, &mut output, arg.dim, arg.lr, arg.neg, neg_table);
@@ -51,7 +51,7 @@ fn train_thread(dict: &Dict,
     let (mut token_count, mut epoch) = (0, 0);
     let all_tokens = arg.epoch as usize * dict.ntokens;
     while epoch < arg.epoch {
-        let input_file = try!(File::open(arg.input.clone()));
+        let input_file = File::open(arg.input.clone())?;
         let mut reader = BufReader::with_capacity(10000, input_file);
         reader.seek(SeekFrom::Start(start_pos))?;
         let mut handle = reader.take(end_pos - start_pos);
@@ -71,7 +71,7 @@ fn train_thread(dict: &Dict,
                 token_count = 0;
                 if tid == 0 {
                     //if arg.verbose {
-                        print_progress(&model, progress, words, &start_time);
+                    print_progress(&model, progress, words, &start_time);
                     //}
                 }
             }
@@ -86,17 +86,19 @@ fn train_thread(dict: &Dict,
             if words >= all_tokens {
                 assert_eq!(words, all_tokens);
                 print_progress(&model, progress, words as f32, &start_time);
-                println!("\ntotal train time:{} s",start_time.elapsed().whole_seconds());
+                println!(
+                    "\ntotal train time:{} s",
+                    start_time.elapsed().whole_seconds()
+                );
                 break;
             }
-
         }
     }
     Ok(true)
 }
 fn split_file(filename: &str, n_split: u64) -> Result<Vec<u64>, W2vError> {
     let all_tokens = metadata(filename)?.len();
-    let input_file = try!(File::open(filename));
+    let input_file = File::open(filename)?;
     let mut reader = BufReader::with_capacity(1000, input_file);
     let offset = all_tokens / n_split;
     let mut junk = Vec::new();
@@ -111,8 +113,13 @@ fn split_file(filename: &str, n_split: u64) -> Result<Vec<u64>, W2vError> {
     Ok(bytes)
 }
 pub fn train(args: &Argument) -> Result<Word2vec, W2vError> {
-    let dict = try!(Dict::new_from_file(&args.input, args.min_count,
-                                        args.threshold, args.verbose));
+    let dict = Dict::new_from_file(
+        &args.input,
+        args.min_count,
+        args.threshold,
+        args.verbose,
+        args.max_rows,
+    )?;
 
     let dict = Arc::new(dict);
     let mut input_mat = Matrix::new(dict.nsize(), args.dim);
@@ -126,33 +133,42 @@ pub fn train(args: &Argument) -> Result<Word2vec, W2vError> {
     let splits = split_file(&args.input, args.nthreads as u64)?;
     let mut handles = Vec::new();
     for i in 0..args.nthreads {
-        let (input, output, dict, arg, neg_table) =
-            (input.clone(), output.clone(), dict.clone(), args.clone(), neg_table.clone());
+        let (input, output, dict, arg, neg_table) = (
+            input.clone(),
+            output.clone(),
+            dict.clone(),
+            args.clone(),
+            neg_table.clone(),
+        );
         let splits = splits.clone();
         handles.push(thread::spawn(move || {
             let dict: &Dict = dict.as_ref();
             let input = input.as_ref().inner.get();
             let output = output.as_ref().inner.get();
-            train_thread(&dict,
-                         unsafe { &mut *input },
-                         unsafe { &mut *output },
-                         arg,
-                         i,
-                         neg_table,
-                         splits[i as usize],
-                         splits[(i + 1) as usize])
+            train_thread(
+                &dict,
+                unsafe { &mut *input },
+                unsafe { &mut *output },
+                arg,
+                i,
+                neg_table,
+                splits[i as usize],
+                splits[(i + 1) as usize],
+            )
         }));
     }
     for h in handles {
-        try!(h.join().unwrap());
+        h.join().unwrap()?;
     }
 
     let input = Arc::try_unwrap(input).unwrap();
     let output = Arc::try_unwrap(output).unwrap();
     let dict = Arc::try_unwrap(dict).unwrap();
-    let w2v = Word2vec::new(unsafe { input.inner.into_inner() },
-                            unsafe { output.inner.into_inner() },
-                            args.dim,
-                            dict);
+    let w2v = Word2vec::new(
+        unsafe { input.inner.into_inner() },
+        unsafe { output.inner.into_inner() },
+        args.dim,
+        dict,
+    );
     Ok(w2v)
 }

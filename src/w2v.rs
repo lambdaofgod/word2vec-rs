@@ -1,8 +1,8 @@
-use {Matrix, Dict};
+use crate::{Matrix, Dict};
 use std::io::prelude::*;
 use std::fs::File;
 
-use utils::W2vError;
+use crate::utils::W2vError;
 pub struct Word2vec {
     syn0: Matrix,
     syn1neg: Matrix,
@@ -39,27 +39,27 @@ impl Word2vec {
     }
     pub fn save_vectors(&self, filename: &str) -> Result<bool, W2vError> {
         let size = self.dict.nsize();
-        let mut file = try!(File::create(filename));
+        let mut file = File::create(filename)?;
         let mut meta = Vec::new();
 
-        try!(write!(&mut meta, "{} {}\n", size, self.dim));
-        try!(file.write_all(&meta));
+        write!(&mut meta, "{} {}\n", size, self.dim)?;
+        file.write_all(&meta)?;
         for i in 0..size {
           let word = self.dict.get_word(i);
             let freq = self.dict.get_entry(&word);
-            try!(file.write(&word.into_bytes()[..]));
+            file.write(&word.into_bytes()[..])?;
             let s = format!(" {}\n",freq.count);
-            try!(file.write(&s.into_bytes()[..]));
+            file.write(&s.into_bytes()[..])?;
         }
         use std::mem;
         use std::slice;
         unsafe{
-            let mut file = try!(File::create(filename.to_owned()+".vec"));
+            let mut file = File::create(filename.to_owned()+".vec")?;
             let ptr = self.syn0.get_row_unmod(0);
             let ptr = mem::transmute::<*const f32,*const u8>(ptr);
             let u8data = slice::from_raw_parts(ptr,
                                                size*self.dim*4);
-            try!(file.write(u8data));
+            file.write(u8data)?;
         };
         Ok(true)
     }

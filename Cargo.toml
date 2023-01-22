@@ -2,7 +2,9 @@
 build="build.rs"
 name = "word2vec"
 version = "0.1.0"
-authors = ["mklf <golifang1234@gmail.com>"]
+edition = "2021"
+authors = ["mklf <golifang1234@gmail.com>", "lambdaofgod <bartczukkuba@gmail.com>"]
+
 [lib]
 name = "word2vec"
 path ="src/lib.rs"
@@ -10,9 +12,6 @@ path ="src/lib.rs"
 name = "word2vec"
 path = "src/main.rs"
 doc = false
-
-[features]
-default = []
 
 [build-dependencies]
 gcc = "0.3"
@@ -22,3 +21,4 @@ rand = "0.4"
 clap = "2.33.3"
 time = "*"
 libc= "*"
+parquet = "11.1.0"

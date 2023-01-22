@@ -1,14 +1,15 @@
-use std::io::{BufReader, stdout};
-use std::io::prelude::*;
-use std::fs::File;
-use std::collections::HashMap;
-use NEGATIVE_TABLE_SIZE;
-use rand::{thread_rng, Rng};
-use rand::distributions::{IndependentSample, Range};
-use std::sync::Arc;
 use super::W2vError;
+use crate::NEGATIVE_TABLE_SIZE;
+use rand::distributions::{IndependentSample, Range};
+use rand::{thread_rng, Rng};
+use std::collections::HashMap;
+use std::fs::File;
+use std::io::prelude::*;
+use std::io::{stdout, BufReader};
 use std::ops::Index;
+use std::sync::Arc;
 
+use parquet::file::reader::{FileReader, SerializedFileReader};
 
 #[derive(Debug)]
 pub struct Dict {
@@ -21,10 +22,10 @@ pub struct Dict {
 #[derive(Debug)]
 pub struct Entry {
     index: usize,
-   pub count: u32,
+    pub count: u32,
 }
 
-const NEG_POW:f64 = 0.75;
+const NEG_POW: f64 = 0.75;
 
 impl Dict {
     fn new() -> Dict {
@@ -52,11 +53,11 @@ impl Dict {
         let mut rng = thread_rng();
         rng.shuffle(&mut negative_table);
         Arc::new(negative_table)
-
     }
 
     fn add_to_dict(words: &mut HashMap<String, Entry>, word: &str, size: &mut usize) {
-        words.entry(word.to_owned())
+        words
+            .entry(word.to_owned())
             .or_insert_with(|| {
                 let ent = Entry {
                     index: *size,
@@ -80,11 +81,11 @@ impl Dict {
         self.idx2word[idx].clone()
     }
     #[inline]
-    pub fn get_entry(&self,word:&str)->&Entry{
+    pub fn get_entry(&self, word: &str) -> &Entry {
         self.word2ent.index(word)
     }
     pub fn counts(&self) -> Vec<u32> {
-        let mut counts_ = vec![0;self.idx2word.len()];
+        let mut counts_ = vec![0; self.idx2word.len()];
         for (i, v) in self.idx2word.iter().enumerate() {
             counts_[i] = self.word2ent[v].count;
         }
@@ -111,7 +112,7 @@ impl Dict {
     fn words_from_text_file(input_file: File) -> (HashMap<String, Entry>, usize) {
         let mut reader = BufReader::with_capacity(10000, input_file);
         let mut buf_str = String::with_capacity(5000);
-        let mut words: HashMap<String, Entry> = HashMap::with_capacity(2<<20);
+        let mut words: HashMap<String, Entry> = HashMap::with_capacity(2 << 20);
         let (mut ntokens, mut size) = (0, 0);
         while reader.read_line(&mut buf_str).unwrap() > 0 {
             for word in buf_str.split_whitespace() {
@@ -127,16 +128,81 @@ impl Dict {
         (words, ntokens)
     }
 
-    pub fn new_from_file(filename: &str,
-                         min_count: u32,
-                         threshold: f32,
-                         verbose: bool)
-                         -> Result<Dict, W2vError> {
+    fn words_from_parquet_file(
+        input_file: File,
+        max_rows: Option<usize>,
+    ) -> (HashMap<String, Entry>, usize) {
+        let reader = SerializedFileReader::new(input_file).unwrap();
+        let parquet_metadata = reader.metadata();
+
+        //print_parquet_metadata(&mut std::io::stdout(), &parquet_metadata);
+        //print_file_metadata(&mut std::io::stdout(), &parquet_metadata.file_metadata());
+        //print_schema(
+        //    &mut std::io::stdout(),
+        //    &parquet_metadata.file_metadata().schema(),
+        //);
+        let mut words: HashMap<String, Entry> = HashMap::with_capacity(2 << 20);
+        let (mut ntokens, mut size) = (0, 0);
+
+        let rows = parquet_metadata.file_metadata().num_rows();
+        let fields = parquet_metadata.file_metadata().schema().get_fields();
+
+        println!("");
+        println!("Parquet dataset column names:");
+
+        // dupa debug
+        for (order, column) in fields.iter().enumerate() {
+            let name = column.name();
+            println!("#: {} | Name: {}", order, name);
+        }
+        println!("using rows {}", max_rows.unwrap_or(0));
+
+        for (i, row) in reader.into_iter().enumerate() {
+            let line = row.to_string();
+            for word in line.split_whitespace() {
+                Dict::add_to_dict(&mut words, word, &mut size);
+                ntokens += 1;
+                if ntokens % 1000000 == 0 {
+                    print!("\rRead {}M words", ntokens / 1000000);
+                    stdout().flush().ok().expect("Could not flush stdout");
+                }
+            }
+            let do_break = max_rows.map_or(false, |m| m == i);
+            if do_break {
+                break;
+            }
+        }
+        (words, ntokens)
+    }
+
+    fn words_from_file(
+        filename: &str,
+        max_rows: Option<usize>,
+    ) -> Result<(HashMap<String, Entry>, usize), W2vError> {
+        match File::open(filename) {
+            Ok(input_file) => Ok({
+                if filename.contains("parquet") {
+                    Self::words_from_parquet_file(input_file, max_rows)
+                } else {
+                    Self::words_from_text_file(input_file)
+                }
+            }),
+            _ => Err(W2vError::RuntimeError),
+        }
+    }
+
+    pub fn new_from_file(
+        filename: &str,
+        min_count: u32,
+        threshold: f32,
+        verbose: bool,
+        max_rows: Option<usize>,
+    ) -> Result<Dict, W2vError> {
         let mut dict = Dict::new();
-        let input_file = try!(File::open(filename));
-        let (words, ntokens) = Self::words_from_text_file(input_file);
+        let (words, ntokens) = Self::words_from_file(filename, max_rows)?;
         let mut size = 0;
-        let word2ent: HashMap<String, Entry> = words.into_iter()
+        let word2ent: HashMap<String, Entry> = words
+            .into_iter()
             .filter(|&(_, ref v)| v.count >= min_count)
             .map(|(k, mut v)| {
                 v.index = size;
@@ -146,7 +212,7 @@ impl Dict {
             .collect();
         dict.word2ent = word2ent;
         dict.word2ent.shrink_to_fit();
-        dict.idx2word = vec!["".to_string();dict.word2ent.len()];
+        dict.idx2word = vec!["".to_string(); dict.word2ent.len()];
         for (k, v) in &dict.word2ent {
             dict.idx2word[v.index] = k.to_string();
         }
@@ -156,7 +222,6 @@ impl Dict {
         if verbose {
             println!("\rRead {} M words", (ntokens / 1000000));
             println!("\r{} unique words in total", size);
-
         }
         dict.init_discard(threshold);
         Ok(dict)
@@ -166,7 +231,8 @@ impl Dict {
         self.discard_table.reserve_exact(size);
         for i in 0..self.nsize() {
             let f = self.word2ent[&self.idx2word[i]].count as f32 / self.ntokens as f32;
-            self.discard_table.push((threshold / f).sqrt() + threshold / f);
+            self.discard_table
+                .push((threshold / f).sqrt() + threshold / f);
         }
     }
 }

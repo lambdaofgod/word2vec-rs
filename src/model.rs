@@ -2,11 +2,11 @@ extern crate rand;
 use libc;
 use std::sync::Arc;
 use std::mem::size_of;
-use matrix::Matrix;
-use saxpy;
+use crate::matrix::Matrix;
+use crate::saxpy;
 
 
-use {MAX_SIGMOID, SIGMOID_TABLE_SIZE, LOG_TABLE_SIZE};
+use crate::{MAX_SIGMOID, SIGMOID_TABLE_SIZE, LOG_TABLE_SIZE};
 const SIGMOID_TABLE_SIZE_F: f32 = SIGMOID_TABLE_SIZE as f32;
 const LOG_TABLE_SIZE_F: f32 = LOG_TABLE_SIZE as f32;
 
