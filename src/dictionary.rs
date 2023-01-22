@@ -9,6 +9,7 @@ use std::sync::Arc;
 use super::W2vError;
 use std::ops::Index;
 
+
 #[derive(Debug)]
 pub struct Dict {
     word2ent: HashMap<String, Entry>,

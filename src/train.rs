@@ -6,7 +6,7 @@ use std::fs::{File, metadata};
 use std::sync::atomic::{AtomicUsize, ATOMIC_USIZE_INIT, Ordering};
 use rand::distributions::{IndependentSample, Range};
 use rand::StdRng;
-use time::PreciseTime;
+use time::Instant;
 use Word2vec;
 use W2vError;
 static ALL_WORDS: AtomicUsize = ATOMIC_USIZE_INIT;
@@ -23,12 +23,11 @@ fn skipgram(model: &mut Model, line: &Vec<usize>, rng: &mut StdRng, unifrom: &Ra
         }
     }
 }
-fn print_progress(model: &Model, progress: f32, words: f32, start_time: &PreciseTime) {
+fn print_progress(model: &Model, progress: f32, words: f32, start_time: &Instant) {
     print!("\rProgress:{:.1}% words/sec:{:<7.0} lr:{:.4} loss:{:.5}",
            progress * 100.,
            ((words * 1000.) /
-            (start_time.to(PreciseTime::now())
-               .num_milliseconds() as f32)) as u64,
+            (start_time.elapsed().whole_milliseconds()) as f32)as u64,
            model.get_lr(),
            model.get_loss());
     stdout().flush().unwrap();
@@ -46,7 +45,7 @@ fn train_thread(dict: &Dict,
     let between = Range::new(1, (arg.win + 1) as isize);
     let mut rng = StdRng::new().unwrap();
     let mut model = Model::new(&mut input, &mut output, arg.dim, arg.lr, arg.neg, neg_table);
-    let start_time = PreciseTime::now();
+    let start_time = Instant::now();
     let mut buffer = String::new();
     let mut line: Vec<usize> = Vec::new();
     let (mut token_count, mut epoch) = (0, 0);
@@ -87,8 +86,7 @@ fn train_thread(dict: &Dict,
             if words >= all_tokens {
                 assert_eq!(words, all_tokens);
                 print_progress(&model, progress, words as f32, &start_time);
-                println!("\ntotal train time:{} s",start_time.to(PreciseTime::now())
-                        .num_seconds());
+                println!("\ntotal train time:{} s",start_time.elapsed().whole_seconds());
                 break;
             }
 
