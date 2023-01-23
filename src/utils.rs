@@ -147,67 +147,67 @@ impl ArgumentBuilder {
         }
     }
     #[allow(dead_code)]
-    pub fn output(&mut self, output: String) -> &mut Self {
+    fn output(&mut self, output: String) -> &mut Self {
         self.output = output;
         self
     }
     #[allow(dead_code)]
-    pub fn lr(&mut self, lr: f32) -> &mut Self {
+    fn lr(&mut self, lr: f32) -> &mut Self {
         self.lr = lr;
         self
     }
     #[allow(dead_code)]
-    pub fn dim(&mut self, dim: usize) -> &mut Self {
+    fn dim(&mut self, dim: usize) -> &mut Self {
         self.dim = dim;
         self
     }
     #[allow(dead_code)]
-    pub fn win(&mut self, win: usize) -> &mut Self {
+    fn win(&mut self, win: usize) -> &mut Self {
         self.win = win;
         self
     }
     #[allow(dead_code)]
-    pub fn epoch(&mut self, epoch: u32) -> &mut Self {
+    fn epoch(&mut self, epoch: u32) -> &mut Self {
         self.epoch = epoch;
         self
     }
     #[allow(dead_code)]
-    pub fn neg(&mut self, neg: usize) -> &mut Self {
+    fn neg(&mut self, neg: usize) -> &mut Self {
         self.neg = neg;
         self
     }
     #[allow(dead_code)]
-    pub fn threads(&mut self, threads: u32) -> &mut Self {
+    fn threads(&mut self, threads: u32) -> &mut Self {
         self.nthreads = threads;
         self
     }
     #[allow(dead_code)]
-    pub fn min_count(&mut self, min_count: u32) -> &mut Self {
+    fn min_count(&mut self, min_count: u32) -> &mut Self {
         self.min_count = min_count;
         self
     }
     #[allow(dead_code)]
-    pub fn threshold(&mut self, threshold: f32) -> &mut Self {
+    fn threshold(&mut self, threshold: f32) -> &mut Self {
         self.threshold = threshold;
         self
     }
     #[allow(dead_code)]
-    pub fn lr_update(&mut self, lr_update: u32) -> &mut Self {
+    fn lr_update(&mut self, lr_update: u32) -> &mut Self {
         self.lr_update = lr_update;
         self
     }
     #[allow(dead_code)]
-    pub fn verbose(&mut self, verbose: bool) -> &mut Self {
+    fn verbose(&mut self, verbose: bool) -> &mut Self {
         self.verbose = verbose;
         self
     }
     #[allow(dead_code)]
-    pub fn max_rows(&mut self, max_rows: Option<usize>) -> &mut Self {
+    fn max_rows(&mut self, max_rows: Option<usize>) -> &mut Self {
         self.max_rows = max_rows;
         self
     }
     #[allow(dead_code)]
-    pub fn finalize(&self) -> Argument {
+    fn finalize(&self) -> Argument {
         Argument {
             input: self.input.to_owned(),
             output: self.output.to_owned(),
@@ -290,6 +290,7 @@ pub fn parse_arguments<'a>(args: &'a Vec<String>) -> Result<Argument, ArgumentEr
             .value_of("threshold")
             .unwrap_or("1e-4")
             .parse::<f32>()?;
+        println!("{}", train_info.value_of("max_rows").unwrap_or("lolz"));
         let max_rows = match train_info.value_of("max_rows") {
             Some(s) => Some(str::parse::<usize>(s)?),
             None => None,

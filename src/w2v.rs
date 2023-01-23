@@ -2,7 +2,7 @@ use crate::{Matrix, Dict};
 use std::io::prelude::*;
 use std::fs::File;
 
-use crate::utils::W2vError;
+use crate::utils;
 pub struct Word2vec {
     syn0: Matrix,
     syn1neg: Matrix,
@@ -37,7 +37,7 @@ impl Word2vec {
         let topn = topn.unwrap_or(10);
         sorted.into_iter().take(topn).collect()
     }
-    pub fn save_vectors(&self, filename: &str) -> Result<bool, W2vError> {
+    pub fn save_vectors(&self, filename: &str) -> Result<bool, utils::W2vError> {
         let size = self.dict.nsize();
         let mut file = File::create(filename)?;
         let mut meta = Vec::new();
