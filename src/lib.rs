@@ -11,6 +11,7 @@ use matrix::Matrix;
 mod utils;
 pub use utils::{Argument, parse_arguments, Command};
 
+mod file_utils;
 mod train;
 pub use train::train;
 const SIGMOID_TABLE_SIZE: usize = 512;

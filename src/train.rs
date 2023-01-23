@@ -4,7 +4,7 @@ use crate::{Argument, Dict, Matrix, Model};
 use rand::distributions::{IndependentSample, Range};
 use rand::StdRng;
 use std::fs::{metadata, File};
-use std::io::{stdout, BufRead, BufReader, Read, Seek, SeekFrom, Write};
+use std::io::{stdout, BufRead, BufReader, Read, Seek, SeekFrom, Write, Lines};
 use std::sync::atomic::{AtomicUsize, Ordering, ATOMIC_USIZE_INIT};
 use std::sync::Arc;
 use std::thread;
@@ -32,6 +32,8 @@ fn print_progress(model: &Model, progress: f32, words: f32, start_time: &Instant
     );
     stdout().flush().unwrap();
 }
+
+
 fn train_thread(
     dict: &Dict,
     mut input: &mut Matrix,
@@ -96,7 +98,7 @@ fn train_thread(
     }
     Ok(true)
 }
-fn split_file(filename: &str, n_split: u64) -> Result<Vec<u64>, W2vError> {
+fn file_split_indices(filename: &str, n_split: u64) -> Result<Vec<u64>, W2vError> {
     let all_tokens = metadata(filename)?.len();
     let input_file = File::open(filename)?;
     let mut reader = BufReader::with_capacity(1000, input_file);
@@ -112,6 +114,8 @@ fn split_file(filename: &str, n_split: u64) -> Result<Vec<u64>, W2vError> {
     bytes.push(all_tokens);
     Ok(bytes)
 }
+
+
 pub fn train(args: &Argument) -> Result<Word2vec, W2vError> {
     let dict = Dict::new_from_file(
         &args.input,
@@ -130,7 +134,7 @@ pub fn train(args: &Argument) -> Result<Word2vec, W2vError> {
     let input = Arc::new(input_mat.make_send());
     let output = Arc::new(output_mat.make_send());
     let neg_table = dict.init_negative_table();
-    let splits = split_file(&args.input, args.nthreads as u64)?;
+    let splits = file_split_indices(&args.input, args.nthreads as u64)?;
     let mut handles = Vec::new();
     for i in 0..args.nthreads {
         let (input, output, dict, arg, neg_table) = (
