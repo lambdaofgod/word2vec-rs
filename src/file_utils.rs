@@ -1,5 +1,5 @@
 use std::{io::{stdout, BufRead, BufReader, Read, Seek, SeekFrom, Write, Lines}, fs::read};
-use parquet::{file::reader::{FileReader, SerializedFileReader}, record::reader::RowIter};
+use parquet::{file::reader::{FileReader, SerializedFileReader}, record::reader::RowIter, record::Row};
 use std::fs::{metadata, File};
 
 fn read_lines_from_file(file: File) -> std::io::Lines<std::io::BufReader<File>> {
@@ -7,16 +7,16 @@ fn read_lines_from_file(file: File) -> std::io::Lines<std::io::BufReader<File>> 
     br.lines()
 }
  
-trait LineReader<Err, ItemType, IterType: Iterator<Item = Result<ItemType, Err>>> {
+trait LineReader<Err, ItemType, IterType: Iterator<Item = ItemType>> {
     fn next_line(&mut self) -> Result<String, Err>;
 //fn from_file(file: File) -> Self;
     fn to_string(item: ItemType) -> String;
 }
 
-struct FileBufLineReader {
+pub struct FileBufLineReader {
     lines: Lines<BufReader<File>>
 }
-impl LineReader<std::io::Error, String, Lines<BufReader<File>>> for FileBufLineReader {
+impl LineReader<std::io::Error, Result<String; std::io::Error>, Lines<BufReader<File>>> for FileBufLineReader {
     fn next_line(&mut self) -> Result<String, std::io::Error> {
         let res = self.lines.next().transpose();
         res.map(|opt| opt.unwrap())
@@ -30,7 +30,7 @@ impl LineReader<std::io::Error, String, Lines<BufReader<File>>> for FileBufLineR
     }
 }
 
-struct ParquetLineReader<'a> {
+pub struct ParquetLineReader<'a> {
     row_iter: RowIter<'a>
 }
 impl <'a> LineReader<parquet::errors::ParquetError, Row, RowIter<'a>> for ParquetLineReader<'a> {
