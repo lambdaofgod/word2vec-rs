@@ -4,12 +4,13 @@ use crate::{Argument, Dict, Matrix, Model};
 use rand::distributions::{IndependentSample, Range};
 use rand::StdRng;
 use std::fs::{metadata, File};
-use std::io::{stdout, BufRead, BufReader, Read, Seek, SeekFrom, Write, Lines};
+use std::io::{stdout, BufRead, BufReader, Lines, Read, Seek, SeekFrom, Write};
 use std::sync::atomic::{AtomicUsize, Ordering, ATOMIC_USIZE_INIT};
 use std::sync::Arc;
 use std::thread;
 use time::Instant;
 static ALL_WORDS: AtomicUsize = ATOMIC_USIZE_INIT;
+use crate::file_utils::TakeBufStrReader;
 
 fn skipgram(model: &mut Model, line: &Vec<usize>, rng: &mut StdRng, unifrom: &Range<isize>) {
     let length = line.len() as i32;
@@ -33,6 +34,17 @@ fn print_progress(model: &Model, progress: f32, words: f32, start_time: &Instant
     stdout().flush().unwrap();
 }
 
+fn get_text_file_line_reader(
+    filename: String,
+    start_pos: u64,
+    end_pos: u64,
+) -> Result<TakeBufStrReader, std::io::Error> {
+    let input_file = File::open(filename)?;
+    let mut reader = BufReader::with_capacity(10000, input_file);
+    reader.seek(SeekFrom::Start(start_pos))?;
+    let handle = reader.take(end_pos - start_pos);
+    Ok(TakeBufStrReader { handle: handle })
+}
 
 fn train_thread(
     dict: &Dict,
@@ -53,15 +65,9 @@ fn train_thread(
     let (mut token_count, mut epoch) = (0, 0);
     let all_tokens = arg.epoch as usize * dict.ntokens;
     while epoch < arg.epoch {
-        let input_file = File::open(arg.input.clone())?;
-        let mut reader = BufReader::with_capacity(10000, input_file);
-        reader.seek(SeekFrom::Start(start_pos))?;
-        let mut handle = reader.take(end_pos - start_pos);
-        while let Ok(bytes) = handle.read_line(&mut buffer) {
-            if bytes == 0 {
-                epoch += 1;
-                break;
-            }
+        let mut take_buf_line_reader =
+            get_text_file_line_reader(arg.input.clone(), start_pos, end_pos)?;
+        while let Ok(_) = take_buf_line_reader.next_line(&mut buffer) {
             token_count += dict.read_line(&mut buffer, &mut line);
             buffer.clear();
             skipgram(&mut model, &line, &mut rng, &between);
@@ -78,6 +84,7 @@ fn train_thread(
                 }
             }
         }
+        epoch += 1;
     }
     ALL_WORDS.fetch_add(token_count, Ordering::SeqCst);
     if tid == 0 && arg.verbose {
@@ -114,7 +121,6 @@ fn file_split_indices(filename: &str, n_split: u64) -> Result<Vec<u64>, W2vError
     bytes.push(all_tokens);
     Ok(bytes)
 }
-
 
 pub fn train(args: &Argument) -> Result<Word2vec, W2vError> {
     let dict = Dict::new_from_file(
