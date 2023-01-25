@@ -1,9 +1,9 @@
 use parquet::{
-    file::reader::{ChunkReader, FileReader, SerializedFileReader},
+    file::reader::{ChunkReader, FileReader, SerializedFileReader, FilePageIterator},
     record::reader::RowIter,
     record::Row,
 };
-use std::fs::{metadata, File};
+use std::{fs::{metadata, File}, sync::Arc};
 use std::{
     fs::read,
     io::{stdout, BufRead, BufReader, Lines, Read, Seek, SeekFrom, Take, Write},
@@ -68,6 +68,15 @@ impl<'a> ParquetStrReader<'a> {
         res.map(|row| *buf = row.to_string());
         Ok(buf)
     }
+}
+
+fn parquet_slice_row_iter(
+    file_name: &str,
+    start_pos: u64,
+    end_pos: u64) -> Result<(), parquet::errors::ParquetError> {
+    let reader = Arc::new(SerializedFileReader::new(File::open(file_name)?)?);
+    // idea: use row groups to control parallelism
+    Ok(())
 }
 
 pub struct ParquetLineReader<'a> {
