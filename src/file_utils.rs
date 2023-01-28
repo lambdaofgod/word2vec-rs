@@ -23,6 +23,8 @@ fn read_lines_from_file(file: File) -> std::io::Lines<std::io::BufReader<File>> 
 }
 
 use std::io::Error as IOError;
+
+use crate::W2vError;
 type MaybeString = Option<String>;
 type StringResult = Result<String, IOError>;
 
@@ -95,18 +97,6 @@ impl<'a> Iterator for TakeBufIter<'a> {
     //}
 }
 
-pub fn get_parquet_file_slice_reader(
-    file_name: String,
-    start_pos: u64,
-    end_pos: u64,
-) -> Result<SerializedFileReader<File>, parquet::errors::ParquetError> {
-    let file = File::open(file_name)?;
-    let options = ReadOptionsBuilder::new()
-        .with_range(start_pos as i64, end_pos as i64)
-        .build();
-    SerializedFileReader::new_with_options(file, options)
-}
-
 pub struct ParquetLineReader<'a> {
     row_iter: RowIter<'a>,
 }
@@ -152,20 +142,68 @@ impl<'a> GetStrIterator<Row, RowIter<'a>> for GetParqetStrIterator {
     }
 }
 
-enum LineIterable {
+pub enum LineIterable {
     Parquet(SerializedFileReader<File>),
     TextFile(Take<BufReader<File>>),
 }
 
-fn get_line_iterator<'a>(liter: LineIterable, buf: &'a mut String) -> impl Iterator<Item = String> + 'a {
-    match liter {
-        LineIterable::Parquet(reader) => Either::Left(GetParqetStrIterator { reader: reader }
-            .get_iterator()
-            .map(|x| x.to_string())
-            .into_iter()),
-        LineIterable::TextFile(handle) => Either::Right(TakeBufIter {
-            handle: handle,
-            buf: buf,
-        }),
+impl LineIterable {
+    fn get_text_file_line_iterable(
+        filename: String,
+        start_pos: u64,
+        end_pos: u64,
+    ) -> Result<Self, W2vError> {
+        let input_file = File::open(filename)?;
+        let mut reader = BufReader::with_capacity(10000, input_file);
+        reader.seek(SeekFrom::Start(start_pos))?;
+        let handle = reader.take(end_pos - start_pos);
+        Ok(LineIterable::TextFile(handle))
+    }
+
+    fn get_parquet_line_iterable(
+        file_name: String,
+        start_pos: u64,
+        end_pos: u64,
+    ) -> Result<Self, W2vError> {
+        let file = File::open(file_name)?;
+        let options = ReadOptionsBuilder::new()
+            .with_range(start_pos as i64, end_pos as i64)
+            .build();
+        let reader = SerializedFileReader::new_with_options(file, options)?;
+        Ok(LineIterable::Parquet(reader))
+    }
+
+    pub fn get_from_file(
+        file_name: String,
+        start_pos: u64,
+        end_pos: u64,
+    ) -> Result<LineIterable, W2vError> {
+        if file_name.contains("parquet") {
+            Self::get_parquet_line_iterable(file_name, start_pos, end_pos)
+        } else {
+            Self::get_text_file_line_iterable(file_name, start_pos, end_pos)
+        }
+    }
+
+    pub fn get_line_iterator<'a>(
+        self,
+        buf: &'a mut String,
+    ) -> impl Iterator<Item = String> + 'a {
+        match self {
+            LineIterable::Parquet(reader) => {
+                println!("preparing parquet iterator");
+                Either::Left(
+                GetParqetStrIterator { reader: reader }
+                    .get_iterator()
+                    .map(|x| x.to_string())
+                    .into_iter()
+                )},
+            LineIterable::TextFile(handle) => {
+                println!("preparing text file iterator");
+                Either::Right(TakeBufIter {
+                handle: handle,
+                buf: buf,
+            })},
+        }
     }
 }

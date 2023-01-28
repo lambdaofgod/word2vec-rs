@@ -3,6 +3,7 @@ use crate::W2vError;
 use crate::Word2vec;
 use crate::{Argument, Dict, Matrix, Model};
 use parquet::file::reader::FileReader;
+use parquet::file::reader::{SerializedFileReader};
 use rand::distributions::{IndependentSample, Range};
 use rand::StdRng;
 use std::fs::{metadata, File};
@@ -12,9 +13,10 @@ use std::iter;
 use std::sync::atomic::{AtomicUsize, Ordering, ATOMIC_USIZE_INIT};
 use std::sync::Arc;
 use std::thread;
+use std::ops;
 use time::Instant;
 static ALL_WORDS: AtomicUsize = ATOMIC_USIZE_INIT;
-use crate::file_utils::TakeBufStrReader;
+use crate::file_utils::{LineIterable};
 
 fn skipgram(model: &mut Model, line: &Vec<usize>, rng: &mut StdRng, unifrom: &Range<isize>) {
     let length = line.len() as i32;
@@ -38,17 +40,6 @@ fn print_progress(model: &Model, progress: f32, words: f32, start_time: &Instant
     stdout().flush().unwrap();
 }
 
-fn get_text_file_line_handle<'a>(
-    filename: String,
-    start_pos: u64,
-    end_pos: u64,
-) -> Result<Take<BufReader<File>>, std::io::Error> {
-    let input_file = File::open(filename)?;
-    let mut reader = BufReader::with_capacity(10000, input_file);
-    reader.seek(SeekFrom::Start(start_pos))?;
-    let handle = reader.take(end_pos - start_pos);
-    Ok(handle)
-}
 
 /*
 pass part of file to a thread and run training
@@ -72,12 +63,8 @@ fn train_thread(
     let (mut token_count, mut epoch) = (0, 0);
     let all_tokens = arg.epoch as usize * dict.ntokens;
     while epoch < arg.epoch {
-        let handle = get_text_file_line_handle(arg.input.clone(), start_pos, end_pos)?;
-        let read_iter = TakeBufIter {
-            handle: handle,
-            buf: &mut buffer,
-        };
-        for mut line_buffer in read_iter.into_iter() {
+        let line_iterable = LineIterable::get_from_file(arg.input.clone(), start_pos, end_pos)?;
+        for mut line_buffer in line_iterable.get_line_iterator(&mut buffer) {
             token_count += dict.read_line(&mut line_buffer, &mut line);
             line_buffer.clear();
             skipgram(&mut model, &line, &mut rng, &between);
@@ -115,7 +102,7 @@ fn train_thread(
     }
     Ok(true)
 }
-fn file_split_indices(filename: &str, n_split: u64) -> Result<Vec<u64>, W2vError> {
+fn text_file_split_indices(filename: &str, n_split: u64) -> Result<Vec<u64>, W2vError> {
     let all_tokens = metadata(filename)?.len();
     let input_file = File::open(filename)?;
     let mut reader = BufReader::with_capacity(1000, input_file);
@@ -130,6 +117,25 @@ fn file_split_indices(filename: &str, n_split: u64) -> Result<Vec<u64>, W2vError
     }
     bytes.push(all_tokens);
     Ok(bytes)
+}
+
+fn parquet_file_split_indices(filename: &str, n_split: u64) -> Result<Vec<u64>, W2vError> {
+    let file = File::open(filename)?;
+    let reader = SerializedFileReader::new(file)?;
+    let metadata = reader.metadata().file_metadata();
+    let n_rows = metadata.num_rows();
+    let rng = ops::Range::new(0, n_rows);
+    let stepped_rng = rng.step_by(step);
+    stepped_rng
+}
+
+fn file_split_indices(filename: &str, n_split: u64) -> Result<Vec<u64>, W2vError> {
+    if !filename.contains("parquet") {
+        text_file_split_indices(filename, n_split)
+    }
+    else {
+        parquet_file_split_indices(filename, n_split)
+    }
 }
 
 pub fn train(args: &Argument) -> Result<Word2vec, W2vError> {
@@ -160,6 +166,10 @@ pub fn train(args: &Argument) -> Result<Word2vec, W2vError> {
             args.clone(),
             neg_table.clone(),
         );
+        println!("split idxs");
+        for split_idx in splits.clone().iter() {
+            println!("{}", split_idx);
+        }
         let splits = splits.clone();
         handles.push(thread::spawn(move || {
             let dict: &Dict = dict.as_ref();

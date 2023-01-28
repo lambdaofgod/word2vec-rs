@@ -12,7 +12,7 @@ mod utils;
 pub use utils::{Argument, parse_arguments, Command};
 
 mod file_utils;
-use file_utils::{TakeBufStrReader, FileBufLineReader, ParquetLineReader};
+use file_utils::{LineIterable};
 mod train;
 pub use train::train;
 const SIGMOID_TABLE_SIZE: usize = 512;
