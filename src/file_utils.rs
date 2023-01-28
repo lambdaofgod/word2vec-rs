@@ -63,6 +63,31 @@ impl TakeBufStrReader {
     //}
 }
 
+
+pub struct TakeBufIter<'a> {
+    pub handle: Take<BufReader<File>>,
+    pub buf: &'a mut String
+}
+
+impl<'a> Iterator for TakeBufIter<'a> {
+    type Item = String;
+    fn next(&mut self) -> Option<Self::Item> {
+        let res = self.handle.read_line(self.buf);
+        let buffer_value = self.buf.clone();
+        self.buf.clear();
+        match res {
+            Ok(0) => None,
+            Ok(_) => Some(buffer_value),
+            _ => None
+        }
+    }
+
+    //fn from_file<'a>(file: File) -> FileBufLineReader {
+    //    let reader = FileBufLineReader { lines: BufReader::new(file).lines() };
+    //    reader
+    //}
+}
+
 pub struct ParquetStrReader<'a> {
     row_iter: RowIter<'a>,
 }

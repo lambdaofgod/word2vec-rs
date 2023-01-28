@@ -1,3 +1,4 @@
+use crate::file_utils::TakeBufIter;
 use crate::W2vError;
 use crate::Word2vec;
 use crate::{Argument, Dict, Matrix, Model};
@@ -5,7 +6,9 @@ use parquet::file::reader::FileReader;
 use rand::distributions::{IndependentSample, Range};
 use rand::StdRng;
 use std::fs::{metadata, File};
+use std::io::Take;
 use std::io::{stdout, BufRead, BufReader, Lines, Read, Seek, SeekFrom, Write};
+use std::iter;
 use std::sync::atomic::{AtomicUsize, Ordering, ATOMIC_USIZE_INIT};
 use std::sync::Arc;
 use std::thread;
@@ -35,16 +38,16 @@ fn print_progress(model: &Model, progress: f32, words: f32, start_time: &Instant
     stdout().flush().unwrap();
 }
 
-fn get_text_file_line_reader(
+fn get_text_file_line_handle<'a>(
     filename: String,
     start_pos: u64,
     end_pos: u64,
-) -> Result<TakeBufStrReader, std::io::Error> {
+) -> Result<Take<BufReader<File>>, std::io::Error> {
     let input_file = File::open(filename)?;
     let mut reader = BufReader::with_capacity(10000, input_file);
     reader.seek(SeekFrom::Start(start_pos))?;
     let handle = reader.take(end_pos - start_pos);
-    Ok(TakeBufStrReader { handle: handle })
+    Ok(handle)
 }
 
 /*
@@ -69,11 +72,16 @@ fn train_thread(
     let (mut token_count, mut epoch) = (0, 0);
     let all_tokens = arg.epoch as usize * dict.ntokens;
     while epoch < arg.epoch {
-        let mut take_buf_line_reader =
-            get_text_file_line_reader(arg.input.clone(), start_pos, end_pos)?;
-        while take_buf_line_reader.next_line(&mut buffer) {
-            token_count += dict.read_line(&mut buffer, &mut line);
-            buffer.clear();
+        let handle = get_text_file_line_handle(arg.input.clone(), start_pos, end_pos)?;
+        let read_iter = TakeBufIter {
+            handle: handle,
+            buf: &mut buffer,
+        };
+        let mut i = 0;
+        for mut line_buffer in read_iter.into_iter() {
+            i += 1;
+            token_count += dict.read_line(&mut line_buffer, &mut line);
+            line_buffer.clear();
             skipgram(&mut model, &line, &mut rng, &between);
             line.clear();
             if token_count > arg.lr_update as usize {
@@ -88,6 +96,7 @@ fn train_thread(
                 }
             }
         }
+        println!("n iters {}", i);
         epoch += 1;
     }
     ALL_WORDS.fetch_add(token_count, Ordering::SeqCst);
