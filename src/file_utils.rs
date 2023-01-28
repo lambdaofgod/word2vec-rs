@@ -1,12 +1,21 @@
 use parquet::{
-    file::reader::{ChunkReader, FileReader, SerializedFileReader, FilePageIterator},
+    arrow::arrow_reader,
+    errors::ParquetError,
+    file::{
+        metadata::ParquetMetaData,
+        reader::{ChunkReader, FilePageIterator, FileReader, SerializedFileReader},
+        serialized_reader::ReadOptionsBuilder,
+    },
     record::reader::RowIter,
     record::Row,
 };
-use std::{fs::{metadata, File}, sync::Arc};
 use std::{
     fs::read,
-    io::{stdout, BufRead, BufReader, Lines, Read, Seek, SeekFrom, Take, Write},
+    io::{stdout, BufRead, BufReader, Lines, Read, Seek, SeekFrom, Take, Write}, usize,
+};
+use std::{
+    fs::{metadata, File},
+    sync::Arc,
 };
 
 fn read_lines_from_file(file: File) -> std::io::Lines<std::io::BufReader<File>> {
@@ -46,6 +55,7 @@ impl LineReader<StringResult, Lines<BufReader<File>>> for FileBufLineReader {
 
 pub struct TakeBufStrReader {
     pub handle: Take<BufReader<File>>,
+    pub buf: String
 }
 impl TakeBufStrReader {
     pub fn next_line<'a>(&mut self, buf: &'a mut String) -> Result<&'a mut String, IOError> {
@@ -57,6 +67,23 @@ impl TakeBufStrReader {
     //    let reader = FileBufLineReader { lines: BufReader::new(file).lines() };
     //    reader
     //}
+    pub fn from_handle(handle: Take<BufReader<File>>) -> Self {
+        let buf = String::new();
+        TakeBufStrReader { handle: handle, buf: buf }
+    }
+}
+
+
+impl Iterator for TakeBufStrReader {
+    type Item = String;
+    fn next(&mut self) -> Option<Self::Item> {
+        let res = self.handle.read_line(&mut self.buf);
+        match res {
+            Ok(0) => None,
+            Ok(_) => Some(self.buf.clone()),
+            _ => None
+        }
+    }
 }
 
 pub struct ParquetStrReader<'a> {
@@ -70,33 +97,22 @@ impl<'a> ParquetStrReader<'a> {
     }
 }
 
-fn parquet_slice_row_iter(
-    file_name: &str,
+pub fn get_parquet_file_slice_reader(
+    file_name: String,
     start_pos: u64,
-    end_pos: u64) -> Result<(), parquet::errors::ParquetError> {
-    let reader = Arc::new(SerializedFileReader::new(File::open(file_name)?)?);
-    // idea: use row groups to control parallelism
-    Ok(())
-}
-
-pub struct ParquetLineReader<'a> {
-    row_iter: RowIter<'a>,
-}
-impl<'a> LineReader<Row, RowIter<'a>> for ParquetLineReader<'a> {
-    fn next_line(&mut self) -> MaybeString {
-        // jesli to jebnie to rezultat typu bedzie zly
-        let next_value = self.row_iter.next();
-        next_value.map(|r| r.to_string())
-    }
-    fn to_maybe_string(item: Row) -> MaybeString {
-        Some(item.to_string())
-    }
+    end_pos: u64,
+) -> Result<SerializedFileReader<File>, parquet::errors::ParquetError> {
+    let file = File::open(file_name)?;
+    let options = ReadOptionsBuilder::new()
+        .with_range(start_pos as i64, end_pos as i64)
+        .build();
+    SerializedFileReader::new_with_options(file, options)
 }
 
 fn words_from_parquet_file(input_file: File, column: &str) -> Option<String> {
     let reader = SerializedFileReader::new(input_file).unwrap();
 
-    let parquet_metadata = reader.metadata();
+    let parquet_metadata: &ParquetMetaData = reader.metadata();
     assert_eq!(parquet_metadata.num_row_groups(), 1);
 
     // let row_group_reader = reader.get_row_group(0).unwrap();

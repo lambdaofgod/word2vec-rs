@@ -1,4 +1,5 @@
 use clap;
+use parquet::errors::ParquetError;
 use std::error;
 use std::fmt;
 use std::io;
@@ -6,6 +7,7 @@ use std::num;
 #[derive(Debug)]
 pub enum W2vError {
     File(io::Error),
+    ParquetFile(ParquetError),
     RuntimeError,
 }
 impl From<io::Error> for W2vError {
@@ -13,10 +15,16 @@ impl From<io::Error> for W2vError {
         W2vError::File(err)
     }
 }
+impl From<ParquetError> for W2vError {
+    fn from(err: ParquetError) -> W2vError {
+        W2vError::ParquetFile(err)
+    }
+}
 
 impl fmt::Display for W2vError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
+            W2vError::ParquetFile(ref reason) => write!(f, "open file error:{}", reason),
             W2vError::File(ref reason) => write!(f, "open file error:{}", reason),
             W2vError::RuntimeError => write!(f, "word2vec runtime error"),
         }
@@ -28,6 +36,7 @@ impl error::Error for W2vError {
         match *self {
             W2vError::File(ref err) => err.description(),
             W2vError::RuntimeError => "RuntimeError",
+            W2vError::ParquetFile(ref err) => err.description(),
         }
     }
 }

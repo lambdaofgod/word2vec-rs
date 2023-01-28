@@ -1,6 +1,8 @@
 use crate::W2vError;
 use crate::Word2vec;
 use crate::{Argument, Dict, Matrix, Model};
+use parquet::file::reader::FileReader;
+use crate::file_utils::{get_parquet_file_slice_reader};
 use rand::distributions::{IndependentSample, Range};
 use rand::StdRng;
 use std::fs::{metadata, File};
@@ -43,9 +45,12 @@ fn get_text_file_line_reader(
     let mut reader = BufReader::with_capacity(10000, input_file);
     reader.seek(SeekFrom::Start(start_pos))?;
     let handle = reader.take(end_pos - start_pos);
-    Ok(TakeBufStrReader { handle: handle })
+    Ok(TakeBufStrReader::from_handle(handle))
 }
 
+/*
+pass part of file to a thread and run training
+*/
 fn train_thread(
     dict: &Dict,
     mut input: &mut Matrix,
@@ -60,16 +65,16 @@ fn train_thread(
     let mut rng = StdRng::new().unwrap();
     let mut model = Model::new(&mut input, &mut output, arg.dim, arg.lr, arg.neg, neg_table);
     let start_time = Instant::now();
-    let mut buffer = String::new();
     let mut line: Vec<usize> = Vec::new();
     let (mut token_count, mut epoch) = (0, 0);
     let all_tokens = arg.epoch as usize * dict.ntokens;
+    println!("all tokens {}", all_tokens);
     while epoch < arg.epoch {
-        let mut take_buf_line_reader =
+        let take_buf_line_reader =
             get_text_file_line_reader(arg.input.clone(), start_pos, end_pos)?;
-        while let Ok(_) = take_buf_line_reader.next_line(&mut buffer) {
-            token_count += dict.read_line(&mut buffer, &mut line);
-            buffer.clear();
+        for mut line_buffer in take_buf_line_reader.into_iter() {
+            token_count += dict.read_line(&mut line_buffer, &mut line);
+            line_buffer.clear();
             skipgram(&mut model, &line, &mut rng, &between);
             line.clear();
             if token_count > arg.lr_update as usize {
@@ -84,6 +89,7 @@ fn train_thread(
                 }
             }
         }
+        println!("epoch {}", epoch);
         epoch += 1;
     }
     ALL_WORDS.fetch_add(token_count, Ordering::SeqCst);

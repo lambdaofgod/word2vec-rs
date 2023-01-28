@@ -1,6 +1,6 @@
+extern crate libc;
 extern crate rand;
 extern crate time;
-extern crate libc;
 mod model;
 use model::Model;
 
@@ -9,10 +9,10 @@ use dictionary::Dict;
 mod matrix;
 use matrix::Matrix;
 mod utils;
-pub use utils::{Argument, parse_arguments, Command};
+pub use utils::{parse_arguments, Argument, Command};
 
 mod file_utils;
-use file_utils::{TakeBufStrReader, FileBufLineReader, ParquetLineReader};
+use file_utils::*;
 mod train;
 pub use train::train;
 const SIGMOID_TABLE_SIZE: usize = 512;
@@ -21,8 +21,8 @@ const NEGATIVE_TABLE_SIZE: usize = 10000000;
 const LOG_TABLE_SIZE: usize = 512;
 
 mod w2v;
-use w2v::Word2vec;
 pub use utils::W2vError;
+use w2v::Word2vec;
 #[macro_use]
 extern crate clap;
 
@@ -32,21 +32,17 @@ use ffi::*;
 use libc::size_t;
 
 #[link(name = "vec_arith")]
-extern {
-    fn simd_dot_product_x4(a: *const f32,b:*const f32,
-                            length: size_t )->f32;
-    fn simd_saxpy(dst:* mut f32, source:*const f32,scale:f32,size:size_t);
+extern "C" {
+    fn simd_dot_product_x4(a: *const f32, b: *const f32, length: size_t) -> f32;
+    fn simd_saxpy(dst: *mut f32, source: *const f32, scale: f32, size: size_t);
 
-    fn saxpy_x4(dst:* mut f32, source:*const f32,scale:f32,size:size_t);
+    fn saxpy_x4(dst: *mut f32, source: *const f32, scale: f32, size: size_t);
 
-    fn simd_dot_product(a: *const f32,b:*const f32,
-                            length: size_t )->f32;
+    fn simd_dot_product(a: *const f32, b: *const f32, length: size_t) -> f32;
 
-    fn dot_product(a: *const f32,b:*const f32,
-                            length: size_t )->f32;
+    fn dot_product(a: *const f32, b: *const f32, length: size_t) -> f32;
 
-
-    fn saxpy(dst:* mut f32, source:*const f32,scale:f32,size:size_t);
+    fn saxpy(dst: *mut f32, source: *const f32, scale: f32, size: size_t);
     /*
     fn snappy_compress(input: *const u8,
                        input_length: size_t,
