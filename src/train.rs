@@ -77,9 +77,7 @@ fn train_thread(
             handle: handle,
             buf: &mut buffer,
         };
-        let mut i = 0;
         for mut line_buffer in read_iter.into_iter() {
-            i += 1;
             token_count += dict.read_line(&mut line_buffer, &mut line);
             line_buffer.clear();
             skipgram(&mut model, &line, &mut rng, &between);
@@ -96,7 +94,6 @@ fn train_thread(
                 }
             }
         }
-        println!("n iters {}", i);
         epoch += 1;
     }
     ALL_WORDS.fetch_add(token_count, Ordering::SeqCst);

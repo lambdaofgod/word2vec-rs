@@ -1,12 +1,20 @@
+use itertools::Either;
 use parquet::{
-    file::reader::{ChunkReader, FileReader, SerializedFileReader, FilePageIterator},
+    file::{
+        reader::{ChunkReader, FilePageIterator, FileReader, SerializedFileReader},
+        serialized_reader::ReadOptionsBuilder,
+    },
     record::reader::RowIter,
     record::Row,
 };
-use std::{fs::{metadata, File}, sync::Arc};
 use std::{
     fs::read,
     io::{stdout, BufRead, BufReader, Lines, Read, Seek, SeekFrom, Take, Write},
+    string::ToString,
+};
+use std::{
+    fs::{metadata, File},
+    sync::Arc,
 };
 
 fn read_lines_from_file(file: File) -> std::io::Lines<std::io::BufReader<File>> {
@@ -53,7 +61,7 @@ impl TakeBufStrReader {
         match res {
             Ok(0) => false,
             Ok(_) => true,
-            _ => false 
+            _ => false,
         }
     }
 
@@ -63,10 +71,9 @@ impl TakeBufStrReader {
     //}
 }
 
-
 pub struct TakeBufIter<'a> {
     pub handle: Take<BufReader<File>>,
-    pub buf: &'a mut String
+    pub buf: &'a mut String,
 }
 
 impl<'a> Iterator for TakeBufIter<'a> {
@@ -78,7 +85,7 @@ impl<'a> Iterator for TakeBufIter<'a> {
         match res {
             Ok(0) => None,
             Ok(_) => Some(buffer_value),
-            _ => None
+            _ => None,
         }
     }
 
@@ -88,24 +95,16 @@ impl<'a> Iterator for TakeBufIter<'a> {
     //}
 }
 
-pub struct ParquetStrReader<'a> {
-    row_iter: RowIter<'a>,
-}
-impl<'a> ParquetStrReader<'a> {
-    pub fn next_line(&mut self, buf: &'a mut String) -> Result<&'a mut String, IOError> {
-        let res = self.row_iter.next();
-        res.map(|row| *buf = row.to_string());
-        Ok(buf)
-    }
-}
-
-fn parquet_slice_row_iter(
-    file_name: &str,
+pub fn get_parquet_file_slice_reader(
+    file_name: String,
     start_pos: u64,
-    end_pos: u64) -> Result<(), parquet::errors::ParquetError> {
-    let reader = Arc::new(SerializedFileReader::new(File::open(file_name)?)?);
-    // idea: use row groups to control parallelism
-    Ok(())
+    end_pos: u64,
+) -> Result<SerializedFileReader<File>, parquet::errors::ParquetError> {
+    let file = File::open(file_name)?;
+    let options = ReadOptionsBuilder::new()
+        .with_range(start_pos as i64, end_pos as i64)
+        .build();
+    SerializedFileReader::new_with_options(file, options)
 }
 
 pub struct ParquetLineReader<'a> {
@@ -122,15 +121,51 @@ impl<'a> LineReader<Row, RowIter<'a>> for ParquetLineReader<'a> {
     }
 }
 
-fn words_from_parquet_file(input_file: File, column: &str) -> Option<String> {
-    let reader = SerializedFileReader::new(input_file).unwrap();
+/*
+- czy to filereader powinien rozszerzać iterator
+- czy on nie powinien mieć metody która zwraca iterator
 
-    let parquet_metadata = reader.metadata();
-    assert_eq!(parquet_metadata.num_row_groups(), 1);
 
-    // let row_group_reader = reader.get_row_group(0).unwrap();
-    let mut row_iter = reader.get_row_iter(None).ok()?;
-    let mut res = row_iter.next();
-    res.map(|r| r.to_string())
-    //let iter = row_iter.map(|row| row.to_string());
+1. zrób traita który jest iterator<string>
+2. zrób metody które zwracają go dla różnych typów
+*/
+
+/*
+
+*/
+
+trait GetStrIterator<T, I>
+where
+    T: ToString,
+    I: Iterator<Item = T>,
+{
+    fn get_iterator(self) -> I;
+}
+
+struct GetParqetStrIterator {
+    reader: SerializedFileReader<File>,
+}
+
+impl<'a> GetStrIterator<Row, RowIter<'a>> for GetParqetStrIterator {
+    fn get_iterator(self) -> RowIter<'a> {
+        self.reader.into_iter()
+    }
+}
+
+enum LineIterable {
+    Parquet(SerializedFileReader<File>),
+    TextFile(Take<BufReader<File>>),
+}
+
+fn get_line_iterator<'a>(liter: LineIterable, buf: &'a mut String) -> impl Iterator<Item = String> + 'a {
+    match liter {
+        LineIterable::Parquet(reader) => Either::Left(GetParqetStrIterator { reader: reader }
+            .get_iterator()
+            .map(|x| x.to_string())
+            .into_iter()),
+        LineIterable::TextFile(handle) => Either::Right(TakeBufIter {
+            handle: handle,
+            buf: buf,
+        }),
+    }
 }
