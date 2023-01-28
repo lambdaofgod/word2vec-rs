@@ -1,6 +1,7 @@
 use crate::W2vError;
 use crate::Word2vec;
 use crate::{Argument, Dict, Matrix, Model};
+use parquet::file::reader::FileReader;
 use rand::distributions::{IndependentSample, Range};
 use rand::StdRng;
 use std::fs::{metadata, File};
@@ -46,6 +47,9 @@ fn get_text_file_line_reader(
     Ok(TakeBufStrReader { handle: handle })
 }
 
+/*
+pass part of file to a thread and run training
+*/
 fn train_thread(
     dict: &Dict,
     mut input: &mut Matrix,
@@ -67,7 +71,7 @@ fn train_thread(
     while epoch < arg.epoch {
         let mut take_buf_line_reader =
             get_text_file_line_reader(arg.input.clone(), start_pos, end_pos)?;
-        while let Ok(_) = take_buf_line_reader.next_line(&mut buffer) {
+        while take_buf_line_reader.next_line(&mut buffer) {
             token_count += dict.read_line(&mut buffer, &mut line);
             buffer.clear();
             skipgram(&mut model, &line, &mut rng, &between);

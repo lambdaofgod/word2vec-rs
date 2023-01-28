@@ -48,9 +48,13 @@ pub struct TakeBufStrReader {
     pub handle: Take<BufReader<File>>,
 }
 impl TakeBufStrReader {
-    pub fn next_line<'a>(&mut self, buf: &'a mut String) -> Result<&'a mut String, IOError> {
+    pub fn next_line<'a>(&mut self, buf: &'a mut String) -> bool {
         let res = self.handle.read_line(buf);
-        res.map(|b| buf)
+        match res {
+            Ok(0) => false,
+            Ok(_) => true,
+            _ => false 
+        }
     }
 
     //fn from_file<'a>(file: File) -> FileBufLineReader {

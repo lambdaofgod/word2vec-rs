@@ -182,8 +182,10 @@ impl Dict {
         match File::open(filename) {
             Ok(input_file) => Ok({
                 if filename.contains("parquet") {
+                    println!("parquet file found");
                     Self::words_from_parquet_file(input_file, max_rows)
                 } else {
+                    println!("text file found");
                     Self::words_from_text_file(input_file)
                 }
             }),
