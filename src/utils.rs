@@ -3,21 +3,28 @@ use std::error;
 use std::fmt;
 use std::io;
 use std::num;
+use parquet::errors::ParquetError;
 #[derive(Debug)]
 pub enum W2vError {
     File(io::Error),
     RuntimeError,
+    Parquet(ParquetError),
 }
 impl From<io::Error> for W2vError {
     fn from(err: io::Error) -> W2vError {
         W2vError::File(err)
     }
 }
-
+impl From<ParquetError> for W2vError {
+    fn from(err: ParquetError) -> W2vError {
+        W2vError::Parquet(err)
+    }
+}
 impl fmt::Display for W2vError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
             W2vError::File(ref reason) => write!(f, "open file error:{}", reason),
+            W2vError::Parquet(ref reason) => write!(f, "parquet file error:{}", reason),
             W2vError::RuntimeError => write!(f, "word2vec runtime error"),
         }
     }
@@ -27,6 +34,7 @@ impl error::Error for W2vError {
     fn description(&self) -> &str {
         match *self {
             W2vError::File(ref err) => err.description(),
+            W2vError::Parquet(ref err) => err.description(),
             W2vError::RuntimeError => "RuntimeError",
         }
     }

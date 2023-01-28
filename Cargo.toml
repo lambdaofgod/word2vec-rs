@@ -23,3 +23,6 @@ time = "*"
 libc= "*"
 parquet = "11.1.0"
 itertools = "0.10.5"
+
+[profile.release]
+opt-level = 1
