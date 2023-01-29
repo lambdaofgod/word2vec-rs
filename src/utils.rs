@@ -290,7 +290,6 @@ pub fn parse_arguments<'a>(args: &'a Vec<String>) -> Result<Argument, ArgumentEr
             .value_of("threshold")
             .unwrap_or("1e-4")
             .parse::<f32>()?;
-        println!("{}", train_info.value_of("max_rows").unwrap_or("lolz"));
         let max_rows = match train_info.value_of("max_rows") {
             Some(s) => Some(str::parse::<usize>(s)?),
             None => None,

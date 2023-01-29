@@ -12,6 +12,8 @@ mod utils;
 pub use utils::{Argument, parse_arguments, Command};
 
 mod file_utils;
+mod tokenization;
+use tokenization::tokenize_python_code;
 use file_utils::{TakeBufStrReader, FileBufLineReader, ParquetLineReader};
 mod train;
 pub use train::train;

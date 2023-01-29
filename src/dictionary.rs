@@ -1,5 +1,6 @@
 use super::W2vError;
 use crate::NEGATIVE_TABLE_SIZE;
+use crate::tokenization::tokenize_python_code;
 use rand::distributions::{IndependentSample, Range};
 use rand::{thread_rng, Rng};
 use std::collections::HashMap;
@@ -26,6 +27,7 @@ pub struct Entry {
 }
 
 const NEG_POW: f64 = 0.75;
+const use_code_tokenization: bool = true;
 
 impl Dict {
     fn new() -> Dict {
@@ -55,9 +57,18 @@ impl Dict {
         Arc::new(negative_table)
     }
 
-    fn add_to_dict(words: &mut HashMap<String, Entry>, word: &str, size: &mut usize) {
+    fn get_tokens(s: &String) -> Vec<String> {
+        if use_code_tokenization {
+            tokenize_python_code(s.clone())
+        }
+        else {
+            s.split_whitespace().map(String::from).collect()
+        }
+    }
+
+    fn add_to_dict(words: &mut HashMap<String, Entry>, word: String, size: &mut usize) {
         words
-            .entry(word.to_owned())
+            .entry(word)
             .or_insert_with(|| {
                 let ent = Entry {
                     index: *size,
@@ -91,12 +102,11 @@ impl Dict {
         }
         counts_
     }
-    pub fn read_line(&self, line: &mut String, lines: &mut Vec<usize>) -> usize {
-        let mut i = 0;
+    pub fn read_line(&self, line: String) -> Vec<usize> {
+        let mut lines: Vec<usize> = Vec::new();
         let mut rng = thread_rng();
         let between = Range::new(0., 1.);
         for word in line.split_whitespace() {
-            i += 1;
             match self.word2ent.get(word) {
                 Some(e) => {
                     if self.discard_table[e.index] > between.ind_sample(&mut rng) {
@@ -106,7 +116,7 @@ impl Dict {
                 None => {}
             }
         }
-        i
+        lines
     }
 
     fn words_from_text_file(input_file: File) -> (HashMap<String, Entry>, usize) {
@@ -115,7 +125,9 @@ impl Dict {
         let mut words: HashMap<String, Entry> = HashMap::with_capacity(2 << 20);
         let (mut ntokens, mut size) = (0, 0);
         while reader.read_line(&mut buf_str).unwrap() > 0 {
-            for word in buf_str.split_whitespace() {
+            let new_line = buf_str.clone();
+            let tokens = Self::get_tokens(&new_line);
+            for word in tokens {
                 Dict::add_to_dict(&mut words, word, &mut size);
                 ntokens += 1;
                 if ntokens % 1000000 == 0 {
@@ -159,7 +171,7 @@ impl Dict {
 
         for (i, row) in reader.into_iter().enumerate() {
             let line = row.to_string();
-            for word in line.split_whitespace() {
+            for word in Self::get_tokens(&line) {
                 Dict::add_to_dict(&mut words, word, &mut size);
                 ntokens += 1;
                 if ntokens % 1000000 == 0 {

@@ -68,7 +68,6 @@ fn train_thread(
     let mut model = Model::new(&mut input, &mut output, arg.dim, arg.lr, arg.neg, neg_table);
     let start_time = Instant::now();
     let mut buffer = String::new();
-    let mut line: Vec<usize> = Vec::new();
     let (mut token_count, mut epoch) = (0, 0);
     let all_tokens = arg.epoch as usize * dict.ntokens;
     while epoch < arg.epoch {
@@ -77,11 +76,10 @@ fn train_thread(
             handle: handle,
             buf: &mut buffer,
         };
-        for mut line_buffer in read_iter.into_iter() {
-            token_count += dict.read_line(&mut line_buffer, &mut line);
-            line_buffer.clear();
+        for line_buffer in read_iter.into_iter() {
+            let line = dict.read_line(line_buffer);
+            token_count += line.len();
             skipgram(&mut model, &line, &mut rng, &between);
-            line.clear();
             if token_count > arg.lr_update as usize {
                 let words = ALL_WORDS.fetch_add(token_count, Ordering::SeqCst) as f32;
                 let progress = words / all_tokens as f32;
