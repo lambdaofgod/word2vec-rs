@@ -20,6 +20,7 @@ use std::{
     fs::{metadata, File},
     sync::Arc,
 };
+use crate::parquet_files::{*};
 
 fn read_lines_from_file(file: File) -> std::io::Lines<std::io::BufReader<File>> {
     let br = std::io::BufReader::new(file);
@@ -107,6 +108,8 @@ impl<'a> LineReader<Row, RowIter<'a>> for ParquetLineReader<'a> {
     }
 }
 
+
+
 /*
 - czy to filereader powinien rozszerzać iterator
 - czy on nie powinien mieć metody która zwraca iterator
@@ -117,15 +120,11 @@ impl<'a> LineReader<Row, RowIter<'a>> for ParquetLineReader<'a> {
 */
 
 /*
-
+podejscie: mutable builder
 */
 
-struct GetParqetStrIterator<'a> {
-    row_iter: Box<RowIter<'a>>,
-}
-
-pub enum LineIterable<'a> {
-    Parquet(SerializedFileReader<File>, GetParqetStrIterator<'a>),
+pub enum LineIterable {
+    Parquet(ParquetGroupReader),
     TextFile(TakeBufIter),
 }
 
@@ -134,58 +133,31 @@ pub enum LoadOptions {
     TextFile(u64, u64),
 }
 
-impl<'a> LineIterable<'a> {
-    pub fn new(filename: String, load_options: LoadOptions) -> Result<LineIterable<'a>, W2vError> {
+impl LineIterable {
+    pub fn new(file: File, load_options: LoadOptions) -> Result<LineIterable, W2vError> {
         match load_options {
-            LoadOptions::Parquet(gp) => Self::get_parquet_line_iterable(filename, gp),
+            LoadOptions::Parquet(gp) => {
+                Ok(Self::Parquet(ParquetGroupReader::from_file(file, gp)?))
+            }
             LoadOptions::TextFile(start, end) => {
-                Self::get_text_file_line_iterable(filename, start, end)
+                Self::get_text_file_line_iterable(file, start, end)
             }
         }
     }
 
-    pub fn to_iter(&self) -> Box<dyn Iterator<Item = String> + 'a> {
-        match self {
-            Self::Parquet(_, pqt_iter) => {
-                Box::new(pqt_iter.into_iter())
-            },
-            Self::TextFile(ref take_buf_iter) => {
-                Box::new(take_buf_iter.into_iter())
-            }
-        }
-    }
-    fn to_line_iterable_from_file_reader(
-        reader: SerializedFileReader<File>,
-        gp: usize,
-    ) -> Result<LineIterable<'a>, W2vError> {
-        let row_iter = reader.get_row_group(gp)?.get_row_iter(None)?;
-        Ok(LineIterable::Parquet(
-            reader,
-            GetParqetStrIterator {
-                row_iter: Box::new(row_iter),
-            },
-        ))
-    }
-
-    fn get_parquet_line_iterable(
-        file_name: String,
-        gp: usize,
-    ) -> Result<LineIterable<'a>, W2vError> {
-        let file = File::open(file_name)?;
-        let reader = SerializedFileReader::new(file)?;
-        Ok(Self::to_line_iterable_from_file_reader(
-            reader,
-            gp as usize,
-        )?)
+    pub fn get_iter(liter: LineIterable) -> Result<Box<dyn Iterator<Item = String>>, W2vError> {
+        Ok(match liter {
+            Self::Parquet(pqt_reader) => Box::new(pqt_reader.into_iter()?),
+            Self::TextFile(take_buf_iter) => Box::new(take_buf_iter.into_iter()),
+        })
     }
 
     fn get_text_file_line_iterable(
-        filename: String,
+        file: File,
         start_pos: u64,
         end_pos: u64,
-    ) -> Result<LineIterable<'a>, W2vError> {
-        let input_file = File::open(filename)?;
-        let mut reader = BufReader::with_capacity(10000, input_file);
+    ) -> Result<LineIterable, W2vError> {
+        let mut reader = BufReader::with_capacity(10000, file);
         reader.seek(SeekFrom::Start(start_pos))?;
         let handle = reader.take(end_pos - start_pos);
         let b_iter = TakeBufIter::new(handle);
@@ -207,14 +179,6 @@ impl Iterator for TakeBufIter {
     }
 }
 
-impl<'a> IntoIterator for GetParqetStrIterator<'a> {
-    type Item = String;
-    type IntoIter = Map<Box<RowIter<'a>>, fn(Row) -> String>;
-
-    fn into_iter(self) -> Self::IntoIter {
-        self.row_iter.map(|r| r.to_string())
-    }
-}
 /*
 pub fn get_from_file(
     file_name: String,

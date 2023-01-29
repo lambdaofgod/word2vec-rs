@@ -62,8 +62,12 @@ fn train_thread(
     let all_tokens = arg.epoch as usize * dict.ntokens;
     while epoch < arg.epoch {
         let mut buffer = String::new();
-        let line_iterable = LineIterable::new(arg.input.clone(), crate::file_utils::LoadOptions::Parquet(start_pos as usize))?;
-        let mut b_iter = line_iterable.to_iter();
+        let file = File::open(arg.input.clone())?;
+        let line_iterable = LineIterable::new(
+            file,
+            crate::file_utils::LoadOptions::Parquet(start_pos as usize),
+        )?;
+        let mut b_iter = LineIterable::get_iter(line_iterable)?;
         for mut line_buffer in b_iter {
             println!("line buffer: {}", line_buffer);
             break;
